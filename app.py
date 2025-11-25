@@ -18,6 +18,7 @@ IMG_SIZE = 224  # change if you used a different size
 
 # Path to the weights file you exported from Kaggle:
 # model.save_weights("/kaggle/working/best_model_weights.h5")
+#need to change the file path
 WEIGHTS_PATH = r"D:\Indu\Thesis\model\CorrectModel\best_model.weights.h5"
 
 # Class order must match your training label order
