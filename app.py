@@ -10,16 +10,20 @@ from tensorflow.keras.preprocessing import image
 from PIL import Image
 import numpy as np
 import io
+from pathlib import Path
 
 # -------- CONFIG --------
 
 # Must match the image size used in your Kaggle training
 IMG_SIZE = 224  # change if you used a different size
 
+BASE_DIR = Path(__file__).resolve().parent.parent   # THESIS_PROJECT folder
+
 # Path to the weights file you exported from Kaggle:
 # model.save_weights("/kaggle/working/best_model_weights.h5")
+WEIGHTS_PATH = BASE_DIR / "model" / "best_model.weights.h5"
 #need to change the file path
-WEIGHTS_PATH = r"D:\Indu\Thesis\model\CorrectModel\best_model.weights.h5"
+#WEIGHTS_PATH = r"D:\Indu\Thesis\model\CorrectModel\best_model.weights.h5"
 
 # Class order must match your training label order
 CLASS_ORDER = ['akiec', 'bcc', 'bkl', 'df', 'mel', 'nv', 'vasc']
@@ -86,7 +90,9 @@ app = FastAPI(title="Skin Cancer Detection API")
 
 # Build architecture and load trained weights (no file is saved when predicting)
 model = build_model()
-model.load_weights(WEIGHTS_PATH)
+#this is add according to the after adjusting the path
+model.load_weights(str(WEIGHTS_PATH))
+#model.load_weights(WEIGHTS_PATH)
 print("DenseNet121 model built and weights loaded.")
 
 #---------------from here onward ifty  you can change----------------
