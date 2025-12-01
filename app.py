@@ -1,7 +1,8 @@
 # app.py
 
 from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import tensorflow as tf
 from tensorflow.keras.applications import DenseNet121
 from tensorflow.keras.models import Sequential
@@ -17,13 +18,10 @@ from pathlib import Path
 # Must match the image size used in your Kaggle training
 IMG_SIZE = 224  # change if you used a different size
 
-BASE_DIR = Path(__file__).resolve().parent.parent   # THESIS_PROJECT folder
+BASE_DIR = Path(__file__).resolve().parent   # dermaai-backend folder
 
 # Path to the weights file you exported from Kaggle:
-# model.save_weights("/kaggle/working/best_model_weights.h5")
-WEIGHTS_PATH = BASE_DIR / "model" / "best_model.weights.h5"
-#need to change the file path
-#WEIGHTS_PATH = r"D:\Indu\Thesis\model\CorrectModel\best_model.weights.h5"
+WEIGHTS_PATH = BASE_DIR / "best_model.weights.h5"
 
 # Class order must match your training label order
 CLASS_ORDER = ['akiec', 'bcc', 'bkl', 'df', 'mel', 'nv', 'vasc']
@@ -88,6 +86,15 @@ def preprocess_image(img: Image.Image) -> np.ndarray:
 
 app = FastAPI(title="Skin Cancer Detection API")
 
+# Enable CORS for all origins (adjust as needed for production)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
+
 # Build architecture and load trained weights (no file is saved when predicting)
 model = build_model()
 #this is add according to the after adjusting the path
@@ -98,23 +105,10 @@ print("DenseNet121 model built and weights loaded.")
 #---------------from here onward ifty  you can change----------------
 # -------- ENDPOINTS --------
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 async def index():
-    """
-    Simple HTML page to upload an image from the browser.
-    """
-    html = """
-    <html>
-        <body>
-            <h2>Upload a skin lesion image</h2>
-            <form action="/predict" enctype="multipart/form-data" method="post">
-                <input name="file" type="file" accept="image/*">
-                <input type="submit" value="Predict">
-            </form>
-        </body>
-    </html>
-    """
-    return HTMLResponse(content=html)
+    """API health check endpoint."""
+    return {"status": "running", "message": "Skin Cancer Detection API"}
 
 
 @app.post("/predict")
@@ -147,3 +141,32 @@ async def predict(file: UploadFile = File(...)):
         })
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# -------- RUN SERVER --------
+if __name__ == "__main__":
+    import uvicorn
+    import socket
+    
+    HOST = "0.0.0.0"  # Bind to all network interfaces (accessible from other devices)
+    PORT = 8000       # Port number
+    
+    # Get device IP address
+    def get_local_ip():
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except Exception:
+            return "127.0.0.1"
+    
+    local_ip = get_local_ip()
+    print(f"\n{'='*50}")
+    print(f"Server running on:")
+    print(f"  Local:   http://localhost:{PORT}")
+    print(f"  Network: http://{local_ip}:{PORT}")
+    print(f"{'='*50}\n")
+    
+    uvicorn.run(app, host=HOST, port=PORT)
