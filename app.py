@@ -126,6 +126,15 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
+# Enable CORS for all origins (adjust as needed for production)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
+
 # Build architecture and load trained weights (no file is saved when predicting)
 model = build_model()
 #this is add according to the after adjusting the path
