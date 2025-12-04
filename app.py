@@ -354,8 +354,10 @@ async def get_user_reports(user_id: str):
         
         reports = []
         async for report in cursor:
+            report_id = str(report["_id"])
             reports.append({
-                "id": str(report["_id"]),
+                "_id": report_id,  # MongoDB format
+                "id": report_id,   # Alternative format
                 "filename": report.get("filename", ""),
                 "lesion_code": report.get("lesion_code", ""),
                 "lesion_name": report.get("lesion_name", ""),
@@ -393,6 +395,33 @@ async def get_report_detail(report_id: str):
         return {
             "success": True,
             "report": report
+        }
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
+# DELETE /api/report/{report_id} - Delete a report
+@app.delete("/api/report/{report_id}")
+async def delete_report(report_id: str):
+    """
+    Delete a report by ID.
+    """
+    try:
+        from bson import ObjectId
+        
+        # Validate ObjectId format
+        if not ObjectId.is_valid(report_id):
+            return JSONResponse({"success": False, "error": "Invalid report ID format"}, status_code=400)
+        
+        result = await reports_collection.delete_one({"_id": ObjectId(report_id)})
+        
+        if result.deleted_count == 0:
+            return JSONResponse({"success": False, "error": "Report not found"}, status_code=404)
+        
+        print(f"Report deleted: {report_id}")
+        return {
+            "success": True,
+            "message": "Report deleted successfully"
         }
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
