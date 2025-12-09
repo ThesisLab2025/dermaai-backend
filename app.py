@@ -404,7 +404,8 @@ async def get_report_detail(report_id: str):
 @app.delete("/api/report/{report_id}")
 async def delete_report(report_id: str):
     """
-    Delete a report by ID.
+    Delete a report by ID and also remove the corresponding analysis entry
+    to update the scan counts properly.
     """
     try:
         from bson import ObjectId
@@ -413,15 +414,100 @@ async def delete_report(report_id: str):
         if not ObjectId.is_valid(report_id):
             return JSONResponse({"success": False, "error": "Invalid report ID format"}, status_code=400)
         
-        result = await reports_collection.delete_one({"_id": ObjectId(report_id)})
+        # First, get the report to find the corresponding analysis
+        report = await reports_collection.find_one({"_id": ObjectId(report_id)})
         
-        if result.deleted_count == 0:
+        if not report:
             return JSONResponse({"success": False, "error": "Report not found"}, status_code=404)
         
+        # Delete the report
+        delete_result = await reports_collection.delete_one({"_id": ObjectId(report_id)})
+        
+        if delete_result.deleted_count == 0:
+            return JSONResponse({"success": False, "error": "Failed to delete report"}, status_code=500)
+        
+        # Also delete the corresponding analysis entry to update scan counts
+        # Match by user_id, filename, and lesion_code to find the corresponding analysis
+        analysis_filter = {
+            "user_id": report["user_id"],
+            "filename": report["filename"],
+            "lesion_code": report["lesion_code"],
+            # Also match confidence to ensure we delete the right analysis
+            "confidence": report["confidence"]
+        }
+        
+        analysis_delete_result = await analysis_collection.delete_one(analysis_filter)
+        
         print(f"Report deleted: {report_id}")
+        if analysis_delete_result.deleted_count > 0:
+            print(f"Corresponding analysis also deleted for user: {report['user_id']}")
+        else:
+            print(f"Warning: No corresponding analysis found to delete for report: {report_id}")
+        
+        # Get updated stats for the user
+        user_id = report["user_id"]
+        total_scans = await analysis_collection.count_documents({"user_id": user_id})
+        seven_days_ago = datetime.utcnow() - timedelta(days=7)
+        scans_this_week = await analysis_collection.count_documents({
+            "user_id": user_id,
+            "saved_at": {"$gte": seven_days_ago}
+        })
+        
         return {
             "success": True,
-            "message": "Report deleted successfully"
+            "message": "Report and corresponding analysis deleted successfully",
+            "updated_stats": {
+                "total_scans": total_scans,
+                "scans_this_week": scans_this_week
+            }
+        }
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
+# DELETE /api/analysis/{analysis_id} - Delete an analysis entry
+@app.delete("/api/analysis/{analysis_id}")
+async def delete_analysis(analysis_id: str):
+    """
+    Delete an analysis entry by ID. This will also update scan counts.
+    """
+    try:
+        from bson import ObjectId
+        
+        # Validate ObjectId format
+        if not ObjectId.is_valid(analysis_id):
+            return JSONResponse({"success": False, "error": "Invalid analysis ID format"}, status_code=400)
+        
+        # First, get the analysis to get user info for updated stats
+        analysis = await analysis_collection.find_one({"_id": ObjectId(analysis_id)})
+        
+        if not analysis:
+            return JSONResponse({"success": False, "error": "Analysis not found"}, status_code=404)
+        
+        # Delete the analysis
+        result = await analysis_collection.delete_one({"_id": ObjectId(analysis_id)})
+        
+        if result.deleted_count == 0:
+            return JSONResponse({"success": False, "error": "Failed to delete analysis"}, status_code=500)
+        
+        # Get updated stats for the user
+        user_id = analysis["user_id"]
+        total_scans = await analysis_collection.count_documents({"user_id": user_id})
+        seven_days_ago = datetime.utcnow() - timedelta(days=7)
+        scans_this_week = await analysis_collection.count_documents({
+            "user_id": user_id,
+            "saved_at": {"$gte": seven_days_ago}
+        })
+        
+        print(f"Analysis deleted: {analysis_id} for user: {user_id}")
+        
+        return {
+            "success": True,
+            "message": "Analysis deleted successfully",
+            "updated_stats": {
+                "total_scans": total_scans,
+                "scans_this_week": scans_this_week
+            }
         }
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
