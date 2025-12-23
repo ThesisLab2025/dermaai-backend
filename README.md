@@ -1,3 +1,8 @@
+
+<p align="center">
+  <img src="https://dermaai.pages.dev/dermaai.png" alt="DermaAI Logo" width="180"/>
+</p>
+
 # DermaAI Backend
 
 Skin cancer detection API using DenseNet121 deep learning model with MongoDB database.
@@ -64,21 +69,26 @@ The server will start on:
 
 ---
 
+
 ## API Endpoints
 
-### Health Check
+| Method   | Endpoint                                 | Description |
+|----------|------------------------------------------|-------------|
+| GET      | `/`                                      | API health check |
+| POST     | `/users`                                 | Create or update user |
+| POST     | `/predict`                               | Analyze skin image (auto-saves if user_id provided) |
+| POST     | `/api/analysis/save`                     | Manually save analysis |
+| GET      | `/api/analysis/stats/{user_id}`          | Get user statistics |
+| GET      | `/api/analysis/history/{user_id}`        | Get user scan history |
+| DELETE   | `/api/analysis/{analysis_id}`            | Delete an analysis entry |
+| POST     | `/api/reports/save`                      | Save a report |
+| GET      | `/api/reports/{user_id}`                 | Get all reports for user |
+| GET      | `/api/reports/detail/{report_id}`        | Get single report detail |
+| DELETE   | `/api/report/{report_id}`                | Delete a report and corresponding analysis |
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/` | API health check |
+### Example Request Bodies
 
-### User Management
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/users` | Create or update user |
-
-**Request Body:**
+**POST `/users`**
 ```json
 {
   "user_id": "user_123",
@@ -87,45 +97,43 @@ The server will start on:
 }
 ```
 
-### Skin Analysis
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/predict` | Analyze skin image (auto-saves if user_id provided) |
-| POST | `/api/analysis/save` | Manually save analysis |
-| GET | `/api/analysis/stats/{user_id}` | Get user statistics |
-| GET | `/api/analysis/history/{user_id}` | Get user scan history |
-
-**POST /predict Request:**
-```
+**POST `/predict`**
 Content-Type: multipart/form-data
 file: [image]
 user_id: "user_123" (optional - enables auto-save)
 user_email: "john@example.com" (optional)
-```
 
-**Response:**
+**POST `/api/analysis/save`**
 ```json
 {
-  "success": true,
+  "user_id": "user_123",
+  "user_email": "john@example.com",
   "filename": "skin.jpg",
   "lesion_code": "nv",
   "lesion_name": "Melanocytic Nevus (benign moles)",
   "binary_prediction": "benign",
   "confidence": 0.9523,
-  "analysis_id": "...",
-  "total_scans": 5,
-  "auto_saved": true
+  "image_data": "...base64...",
+  "analyzed_at": "2025-12-23T12:00:00Z"
 }
 ```
 
-### Reports
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/reports/save` | Save a report |
-| GET | `/api/reports/{user_id}` | Get all reports for user |
-| GET | `/api/reports/detail/{report_id}` | Get single report detail |
+**POST `/api/reports/save`**
+```json
+{
+  "user_id": "user_123",
+  "user_email": "john@example.com",
+  "report_type": "full",
+  "filename": "skin.jpg",
+  "lesion_code": "nv",
+  "lesion_name": "Melanocytic Nevus (benign moles)",
+  "binary_prediction": "benign",
+  "confidence": 0.9523,
+  "image_data": "...base64...",
+  "report_html": "<html>...</html>",
+  "generated_at": "2025-12-23T12:00:00Z"
+}
+```
 
 ---
 
