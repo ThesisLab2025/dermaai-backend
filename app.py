@@ -25,6 +25,58 @@ from pathlib import Path
 load_dotenv()
 MONGODB_URL = os.getenv("MONGODB_URL")
 
+# -------- DERMOSCOPY CHECK (IMPROVED HEURISTIC) --------
+def is_dermoscopic_image(img: Image.Image) -> dict:
+    """
+    Check if image is dermoscopic using two signals:
+    1. Border uniformity (edges should be similar)
+    2. Clutter (background variance - lower = more dermoscopic)
+    """
+    # Resize to 256x256
+    small = img.convert("RGB").resize((256, 256))
+    arr = np.asarray(small).astype("float32") / 255.0
+    
+    # Convert to grayscale
+    gray = (0.299 * arr[..., 0] + 0.587 * arr[..., 1] + 0.114 * arr[..., 2])
+    
+    # Signal 1: Edge uniformity
+    band = 24
+    top = gray[:band, :].ravel()
+    bottom = gray[-band:, :].ravel()
+    left = gray[:, :band].ravel()
+    right = gray[:, -band:].ravel()
+    
+    edge_means = np.array([top.mean(), bottom.mean(), left.mean(), right.mean()], dtype=np.float32)
+    edge_std = float(edge_means.std())
+    border_uniform_score = float(np.clip((0.08 - edge_std) / 0.08, 0.0, 1.0))
+    
+    # Signal 2: Clutter via tile RGB std
+    tile = 32
+    tile_stds = []
+    for y in range(0, 256, tile):
+        for x in range(0, 256, tile):
+            patch = arr[y:y + tile, x:x + tile, :]
+            tile_stds.append(float(np.std(patch)))
+    
+    clutter = float(np.mean(tile_stds))
+    clutter_score = float(np.clip((0.14 - clutter) / 0.14, 0.0, 1.0))
+    
+    # Combine scores
+    score = (0.55 * border_uniform_score) + (0.45 * clutter_score)
+    is_dermo = score >= 0.13  # THRESHOLD
+    
+    return {
+        "is_dermoscopic": bool(is_dermo),
+        "score": float(np.clip(score, 0.0, 1.0)),
+        "signals": {
+            "edge_means": [round(float(x), 4) for x in edge_means],
+            "edge_std": round(edge_std, 4),
+            "border_uniform_score": round(border_uniform_score, 4),
+            "clutter": round(clutter, 4),
+            "clutter_score": round(clutter_score, 4),
+        }
+    }
+
 # Must match the image size used in your Kaggle training
 IMG_SIZE = 224  # change if you used a different size
 
@@ -538,7 +590,6 @@ async def get_analysis_history(user_id: str):
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
-
 @app.post("/predict")
 async def predict(
     file: UploadFile = File(...),
@@ -546,31 +597,65 @@ async def predict(
     user_email: str = None
 ):
     """
-    Receive the uploaded file in memory, run the model, return JSON.
-    Auto-saves analysis if user_id is provided.
+    Receive the uploaded file in memory, validate dermoscopy, run the model, return JSON.
+    
+    Flow:
+    1. Validate file type and read image
+    2. Check if image is dermoscopic (using heuristic)
+    3. If NOT dermoscopic: return 400 with score
+    4. If dermoscopic: run model prediction
+    5. Auto-save analysis if user_id is provided
     """
     try:
+        # 1) Validate file type
+        if file.content_type and not file.content_type.startswith("image/"):
+            return JSONResponse(
+                {"success": False, "error": "Please upload a valid image file."},
+                status_code=400
+            )
+
         # Read image bytes from the uploaded file (in memory)
         contents = await file.read()
-        img = Image.open(io.BytesIO(contents)).convert("RGB")
-        
+        try:
+            img = Image.open(io.BytesIO(contents)).convert("RGB")
+        except Exception as e:
+            return JSONResponse(
+                {"success": False, "error": f"Failed to read image: {str(e)}"},
+                status_code=400
+            )
+
         # Convert image to base64 for storage
         import base64
         image_base64 = base64.b64encode(contents).decode('utf-8')
 
-        # Preprocess and predict
-        x = preprocess_image(img)
-        preds = model.predict(x)[0]  # shape (7,)
+        # 2) Check if image is dermoscopic
+        dermo = is_dermoscopic_image(img)
+        
+        if not dermo["is_dermoscopic"]:
+            # NOT DERMOSCOPIC - return error with score
+            return JSONResponse({
+                "filename": file.filename,
+                "is_dermoscopic": False,
+                "dermoscopy_score": dermo["score"],
+                "message": "This image does not look like a dermoscopic image. Please upload a dermoscopy image.",
+                "signals": dermo["signals"]
+            }, status_code=400)
 
-        # Get predicted class
+        # 3) DERMOSCOPIC - run prediction
+        x = preprocess_image(img)
+        preds = model.predict(x, verbose=0)[0]
+
         idx = int(np.argmax(preds))
         code = CLASS_ORDER[idx]
         binary = get_binary_label(code)
         confidence = float(np.max(preds))
         
+        # Return success response
         result = {
             "success": True,
             "filename": file.filename,
+            "is_dermoscopic": True,
+            "dermoscopy_score": round(dermo["score"], 4),
             "lesion_code": code,
             "lesion_name": lesion_info[code],
             "binary_prediction": binary,
@@ -601,8 +686,13 @@ async def predict(
             print(f"Analysis auto-saved for user: {user_id}")
         
         return JSONResponse(result)
+        
     except Exception as e:
-        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+        return JSONResponse(
+            {"success": False, "error": str(e)},
+            status_code=500
+        )
+
 
 
 # -------- RUN SERVER --------
